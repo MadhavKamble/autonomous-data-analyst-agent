@@ -34,6 +34,16 @@ uv run --project backend python db/seed/seed_mock_data.py
 # 4. Provision the read-only role's login (grants live in migration 002;
 #    the password deliberately does not)
 AGENT_RO_PASSWORD=agent_local_pw uv run --project backend python scripts/set_agent_password.py
+
+# 5. Build the RAG index (embeds via local Ollama; add --skip-embeddings to
+#    index for lexical retrieval only)
+uv run --project backend python scripts/build_rag_index.py
+
+# 6. Run the API (uses LLM_BACKEND from backend/.env — ollama for offline dev)
+cd backend && uv run uvicorn app.main:app --reload --port 8000
+# then: curl localhost:8000/health
+#       curl -X POST localhost:8000/ask -H 'Content-Type: application/json' \
+#            -d '{"question": "Which zones generated the most revenue in June 2026?"}'
 ```
 
 To load **real** data instead of mock data, run the export utility against the other

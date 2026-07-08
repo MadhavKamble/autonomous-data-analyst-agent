@@ -15,21 +15,27 @@ falls back to the schema-doc and guidance chunks instead of returning [].
 The SQL generator downstream must always receive schema context — an empty
 grounding context is how hallucinated columns happen.
 
-Connections are opened per call for now; this moves to a shared pool when the
-FastAPI layer lands (step 7).
+Database access goes through an injected `connect` callable returning a
+connection context manager — `pool.connection` inside the FastAPI app (shared
+app pool), `psycopg.connect(url)` in standalone scripts. The retriever neither
+knows nor cares which.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Callable, Protocol
 
 import psycopg
 
 from app.config import Settings
 from app.rag.embeddings import EmbeddingProvider, create_embedding_provider
+
+# pool.connection and a psycopg.connect(...) closure both satisfy this.
+ConnectFn = Callable[[], AbstractContextManager[psycopg.Connection]]
 
 
 @dataclass(frozen=True)
@@ -65,14 +71,14 @@ def _fallback(conn: psycopg.Connection, top_k: int) -> list[RetrievedChunk]:
 
 
 class VectorRetriever:
-    def __init__(self, db_url: str, embedder: EmbeddingProvider, top_k: int = 4) -> None:
-        self._db_url = db_url
+    def __init__(self, connect: ConnectFn, embedder: EmbeddingProvider, top_k: int = 4) -> None:
+        self._connect = connect
         self._embedder = embedder
         self._top_k = top_k
 
     def retrieve(self, question: str) -> list[RetrievedChunk]:
         [query_vector] = self._embedder.embed([question])
-        with psycopg.connect(self._db_url) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 # <=> is pgvector cosine distance; report 1 - distance so the
                 # score reads as similarity (higher = better). Exact scan by
@@ -92,8 +98,8 @@ class VectorRetriever:
 
 
 class LexicalRetriever:
-    def __init__(self, db_url: str, top_k: int = 4) -> None:
-        self._db_url = db_url
+    def __init__(self, connect: ConnectFn, top_k: int = 4) -> None:
+        self._connect = connect
         self._top_k = top_k
 
     def retrieve(self, question: str) -> list[RetrievedChunk]:
@@ -105,10 +111,10 @@ class LexicalRetriever:
         # syntax; stop words are dropped by the 'english' config server-side.
         words = re.findall(r"[A-Za-z0-9_]+", question)
         if not words:
-            with psycopg.connect(self._db_url) as conn:
+            with self._connect() as conn:
                 return _fallback(conn, self._top_k)
 
-        with psycopg.connect(self._db_url) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT id, kind, content, ts_rank_cd(ts, query)::float AS score
@@ -124,12 +130,21 @@ class LexicalRetriever:
         return [RetrievedChunk(*row) for row in rows]
 
 
-def create_retriever(settings: Settings) -> Retriever:
-    """Factory keyed on the RETRIEVER config toggle."""
+def create_retriever(settings: Settings, connect: ConnectFn | None = None) -> Retriever:
+    """Factory keyed on the RETRIEVER config toggle.
+
+    `connect` defaults to per-call connections against the app database URL
+    (standalone scripts); the FastAPI app passes its shared pool's
+    `pool.connection` instead.
+    """
+    if connect is None:
+        def connect() -> AbstractContextManager[psycopg.Connection]:
+            return psycopg.connect(settings.admin_database_url)
+
     if settings.retriever == "vector":
         return VectorRetriever(
-            db_url=settings.admin_database_url,
+            connect=connect,
             embedder=create_embedding_provider(settings),
             top_k=settings.rag_top_k,
         )
-    return LexicalRetriever(db_url=settings.admin_database_url, top_k=settings.rag_top_k)
+    return LexicalRetriever(connect=connect, top_k=settings.rag_top_k)

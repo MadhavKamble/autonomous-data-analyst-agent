@@ -43,7 +43,7 @@ from app.orchestrator.trace import (
     ResultData,
     RetrievedChunkTrace,
 )
-from app.rag.retriever import RetrievedChunk, Retriever, create_retriever
+from app.rag.retriever import ConnectFn, RetrievedChunk, Retriever, create_retriever
 
 logger = logging.getLogger(__name__)
 
@@ -246,11 +246,16 @@ def _execution_trace(execution: ExecutionResult) -> ExecutionTrace:
     )
 
 
-def create_pipeline(settings: Settings) -> Pipeline:
-    """Composition root: everything the pipeline needs, wired from config."""
+def create_pipeline(settings: Settings, connect: ConnectFn | None = None) -> Pipeline:
+    """Composition root: everything the pipeline needs, wired from config.
+
+    `connect` (app-state DB access for retrieval) comes from the FastAPI app's
+    shared pool; omitted in scripts, which then use per-call connections. The
+    executor is NOT pooled by design — see db/engine.py.
+    """
     return Pipeline(
         llm=create_llm_client(settings),
-        retriever=create_retriever(settings),
+        retriever=create_retriever(settings, connect=connect),
         executor=SQLExecutor(
             agent_db_url=settings.agent_database_url,
             row_cap=settings.sql_row_cap,
