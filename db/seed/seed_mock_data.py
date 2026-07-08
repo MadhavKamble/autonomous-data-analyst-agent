@@ -8,8 +8,10 @@ replaced) by scripts/export_from_delta.py.
 What "realistic" means here, so demo questions produce sensible answers:
 
 - Hourly demand follows a commuter curve (morning/evening peaks, quiet 2-5am).
+- Ride statuses use the upstream simulator's real vocabulary: requested,
+  completed, cancelled.
 - Fares correlate with distance; surge rises in peak hours; gross fare is
-  base x surge for completed rides and 0.0 for cancelled ones.
+  base x surge for completed rides and 0.0 otherwise.
 - Airport zones skew towards long trips.
 - zone_demand_historical_nyc is AGGREGATED FROM the generated rides inside the
   database, so the row-level and aggregate tables are mutually consistent —
@@ -18,10 +20,10 @@ What "realistic" means here, so demo questions produce sensible answers:
 Everything is driven by a seeded RNG (--seed), so runs are reproducible and
 tests can assert against stable data.
 
-Categorical values (zones, vehicle types, payment methods, statuses) are
-plausible PLACEHOLDERS, not values copied from the real pipeline — the real
-value sets arrive with the export. Dates are fixed, not relative to "today",
-for reproducibility.
+Status values (requested/completed/cancelled) match the real pipeline's
+vocabulary. The other categorical values (zones, vehicle types, payment
+methods) are plausible PLACEHOLDERS — their real value sets arrive with the
+export. Dates are fixed, not relative to "today", for reproducibility.
 
 Usage:
     python db/seed/seed_mock_data.py                    # ADMIN_DATABASE_URL from env/.env
@@ -76,10 +78,13 @@ SIM_ZONES: list[tuple[str, float]] = [
 
 VEHICLE_TYPES = [("economy", 0.55), ("comfort", 0.25), ("premium", 0.12), ("xl", 0.08)]
 PAYMENT_METHODS = [("upi", 0.35), ("card", 0.30), ("cash", 0.20), ("wallet", 0.15)]
+# Real lifecycle vocabulary from the upstream simulator: a ride is requested,
+# then either completes or is cancelled; some stay "requested" (never
+# fulfilled). is_completed <=> status = 'completed'.
 RIDE_STATUSES = [
     ("completed", 0.87),
-    ("cancelled_by_rider", 0.08),
-    ("cancelled_by_driver", 0.05),
+    ("cancelled", 0.09),
+    ("requested", 0.04),
 ]
 
 # Relative demand by hour of day (index = hour). Commuter curve: peaks around
@@ -183,8 +188,15 @@ def generate_zone_demand(rng: random.Random) -> list[tuple]:
                 ride_count = max(int(expected), 0)
                 if ride_count == 0:
                     continue  # the simulator emits no row for a dead zone-hour
-                completed = sum(1 for _ in range(ride_count) if rng.random() < 0.88)
-                cancelled = ride_count - completed
+                # Three-way status split (requested rides are the remainder:
+                # counted in ride_count but neither completed nor cancelled).
+                completed = cancelled = 0
+                for _ in range(ride_count):
+                    r = rng.random()
+                    if r < 0.88:
+                        completed += 1
+                    elif r < 0.95:
+                        cancelled += 1
                 surge = round(min(max(rng.gauss(SURGE_MEAN_BY_HOUR[hour], 0.15), 1.0), 3.0), 2)
                 avg_fare = rng.uniform(150.0, 400.0)
                 rows.append((
@@ -206,8 +218,10 @@ def generate_zone_demand(rng: random.Random) -> list[tuple]:
 
 # Aggregating the historical table FROM the generated rides (rather than
 # generating it independently) guarantees the two NYC tables tell one
-# consistent story. Semantics assumed: ride_count counts all rides,
-# gross_revenue_inr sums completed rides only, avg surge averages all rides.
+# consistent story. Semantics assumed: ride_count counts all statuses,
+# cancelled_rides counts status = 'cancelled' only (NOT "everything that
+# didn't complete" — 'requested' rides are neither), gross_revenue_inr sums
+# completed rides only, avg surge averages all rides.
 AGGREGATE_HISTORICAL_SQL = """
     INSERT INTO zone_demand_historical_nyc
         (event_date, event_hour, city_zone, ride_count, completed_rides,
@@ -217,8 +231,8 @@ AGGREGATE_HISTORICAL_SQL = """
         event_hour,
         city_zone,
         count(*),
-        count(*) FILTER (WHERE is_completed),
-        count(*) FILTER (WHERE NOT is_completed),
+        count(*) FILTER (WHERE status = 'completed'),
+        count(*) FILTER (WHERE status = 'cancelled'),
         round(coalesce(sum(gross_fare_inr) FILTER (WHERE is_completed), 0)::numeric, 2),
         round(avg(surge_multiplier)::numeric, 4)
     FROM rides_historical_nyc

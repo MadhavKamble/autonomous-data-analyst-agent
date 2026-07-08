@@ -48,9 +48,9 @@ COMMENT ON TABLE  zone_demand IS
 COMMENT ON COLUMN zone_demand.event_date           IS 'Calendar date as a string, format YYYY-MM-DD.';
 COMMENT ON COLUMN zone_demand.event_hour           IS 'Hour of day 0-23. BIGINT here but INTEGER in zone_demand_historical_nyc - cast explicitly when unioning/joining across the two tables.';
 COMMENT ON COLUMN zone_demand.city_zone            IS 'Name of the city zone the rides originated in.';
-COMMENT ON COLUMN zone_demand.ride_count           IS 'Total rides requested in this zone-hour (completed + cancelled).';
-COMMENT ON COLUMN zone_demand.completed_rides      IS 'Rides that completed successfully in this zone-hour.';
-COMMENT ON COLUMN zone_demand.cancelled_rides      IS 'Rides cancelled in this zone-hour.';
+COMMENT ON COLUMN zone_demand.ride_count           IS 'Total rides in this zone-hour across all statuses (requested + completed + cancelled), so ride_count >= completed_rides + cancelled_rides.';
+COMMENT ON COLUMN zone_demand.completed_rides      IS 'Rides with status ''completed'' in this zone-hour.';
+COMMENT ON COLUMN zone_demand.cancelled_rides      IS 'Rides with status ''cancelled'' in this zone-hour (does not include unfulfilled ''requested'' rides).';
 COMMENT ON COLUMN zone_demand.gross_revenue_inr    IS 'Total gross revenue for the zone-hour, in Indian Rupees (INR).';
 COMMENT ON COLUMN zone_demand.avg_surge_multiplier IS 'Average surge pricing multiplier over rides in the zone-hour (1.0 = no surge).';
 
@@ -90,8 +90,8 @@ COMMENT ON COLUMN rides_historical_nyc.fare_base_inr    IS 'Base fare before sur
 COMMENT ON COLUMN rides_historical_nyc.surge_multiplier IS 'Surge pricing multiplier applied to this ride (1.0 = no surge).';
 COMMENT ON COLUMN rides_historical_nyc.payment_method   IS 'How the rider paid (categorical string).';
 COMMENT ON COLUMN rides_historical_nyc.vehicle_type     IS 'Vehicle category of the ride (categorical string).';
-COMMENT ON COLUMN rides_historical_nyc.is_completed     IS 'TRUE if the ride completed; FALSE if it was cancelled.';
-COMMENT ON COLUMN rides_historical_nyc.status           IS 'Ride outcome as a string; more granular than is_completed (e.g. distinguishes who cancelled).';
+COMMENT ON COLUMN rides_historical_nyc.is_completed     IS 'TRUE if the ride completed (equivalent to status = ''completed'').';
+COMMENT ON COLUMN rides_historical_nyc.status           IS 'Ride lifecycle status: one of ''requested'', ''completed'', ''cancelled''. Rides left in ''requested'' were never fulfilled and count in ride totals but are neither completed nor cancelled.';
 COMMENT ON COLUMN rides_historical_nyc.gross_fare_inr   IS 'Final charged fare in INR (base fare x surge for completed rides).';
 
 CREATE INDEX IF NOT EXISTS idx_rides_hist_date       ON rides_historical_nyc (event_date);
@@ -118,9 +118,9 @@ COMMENT ON TABLE  zone_demand_historical_nyc IS
 COMMENT ON COLUMN zone_demand_historical_nyc.event_date           IS 'Calendar date as a string, format YYYY-MM-DD.';
 COMMENT ON COLUMN zone_demand_historical_nyc.event_hour           IS 'Hour of day 0-23. INTEGER here but BIGINT in zone_demand - cast explicitly when unioning/joining across the two tables.';
 COMMENT ON COLUMN zone_demand_historical_nyc.city_zone            IS 'NYC TLC zone name.';
-COMMENT ON COLUMN zone_demand_historical_nyc.ride_count           IS 'Total rides requested in this zone-hour (completed + cancelled).';
-COMMENT ON COLUMN zone_demand_historical_nyc.completed_rides      IS 'Rides that completed successfully in this zone-hour.';
-COMMENT ON COLUMN zone_demand_historical_nyc.cancelled_rides      IS 'Rides cancelled in this zone-hour.';
+COMMENT ON COLUMN zone_demand_historical_nyc.ride_count           IS 'Total rides in this zone-hour across all statuses (requested + completed + cancelled), so ride_count >= completed_rides + cancelled_rides.';
+COMMENT ON COLUMN zone_demand_historical_nyc.completed_rides      IS 'Rides with status ''completed'' in this zone-hour.';
+COMMENT ON COLUMN zone_demand_historical_nyc.cancelled_rides      IS 'Rides with status ''cancelled'' in this zone-hour (does not include unfulfilled ''requested'' rides).';
 COMMENT ON COLUMN zone_demand_historical_nyc.gross_revenue_inr    IS 'Total gross revenue for the zone-hour in INR (sum of completed rides'' gross fares).';
 COMMENT ON COLUMN zone_demand_historical_nyc.avg_surge_multiplier IS 'Average surge multiplier over rides in the zone-hour (1.0 = no surge).';
 
