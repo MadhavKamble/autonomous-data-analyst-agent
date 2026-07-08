@@ -1,0 +1,148 @@
+# Curated NL -> SQL pairs, retrieved as few-shot grounding for the SQL
+# generator. Each entry becomes one rag_chunk (kind = query_example).
+#
+# Guidelines for adding entries:
+# - SQL must run as-is against the schemas in db/migrations/001_data_tables.sql
+#   (scripts/build_rag_index.py EXPLAIN-validates every example at build time).
+# - Cover patterns, not trivia: each example should teach the generator a
+#   reusable idiom (a filter rule, a cast, a rate calculation).
+# - Dates in examples are illustrative; the generator adapts them.
+
+- id: revenue-by-zone
+  question: Which zones generated the most revenue in June 2026?
+  sql: |
+    SELECT city_zone,
+           round(sum(gross_revenue_inr)::numeric, 2) AS total_revenue_inr
+    FROM zone_demand_historical_nyc
+    WHERE event_date BETWEEN '2026-06-01' AND '2026-06-30'
+    GROUP BY city_zone
+    ORDER BY total_revenue_inr DESC
+    LIMIT 10
+  notes: >
+    Zone-level revenue questions use the aggregate table, not row-level rides.
+    event_date is text in YYYY-MM-DD format, so BETWEEN works lexicographically.
+
+- id: busiest-hours
+  question: What are the busiest hours of the day by ride volume?
+  sql: |
+    SELECT event_hour,
+           sum(ride_count) AS total_rides
+    FROM zone_demand_historical_nyc
+    GROUP BY event_hour
+    ORDER BY total_rides DESC
+    LIMIT 5
+  notes: event_hour is 0-23; sum ride_count across all dates and zones.
+
+- id: cancellation-rate-by-zone
+  question: Which zones have the highest cancellation rate?
+  sql: |
+    SELECT city_zone,
+           round(100.0 * sum(cancelled_rides) / nullif(sum(ride_count), 0), 1)
+               AS cancellation_pct
+    FROM zone_demand_historical_nyc
+    GROUP BY city_zone
+    ORDER BY cancellation_pct DESC
+    LIMIT 10
+  notes: >
+    cancelled_rides counts status='cancelled' only; unfulfilled 'requested'
+    rides are in ride_count but in neither completed_rides nor cancelled_rides.
+    nullif guards division by zero.
+
+- id: avg-fare-by-vehicle
+  question: What is the average fare by vehicle type?
+  sql: |
+    SELECT vehicle_type,
+           round(avg(gross_fare_inr)::numeric, 2) AS avg_fare_inr,
+           count(*) AS completed_rides
+    FROM rides_historical_nyc
+    WHERE status = 'completed'
+    GROUP BY vehicle_type
+    ORDER BY avg_fare_inr DESC
+  notes: >
+    Always filter status = 'completed' for fare averages: gross_fare_inr is
+    0.0 for cancelled and requested rides and would drag the average down.
+
+- id: surge-by-hour
+  question: How does surge pricing vary across the day?
+  sql: |
+    SELECT event_hour,
+           round(avg(avg_surge_multiplier)::numeric, 3) AS avg_surge
+    FROM zone_demand_historical_nyc
+    GROUP BY event_hour
+    ORDER BY event_hour
+  notes: 1.0 means no surge; peaks track commuter hours.
+
+- id: simulator-vs-historical-union
+  question: Compare hourly ride volumes between the live simulator and the NYC historical data.
+  sql: |
+    SELECT 'simulator' AS source,
+           event_hour::integer AS event_hour,
+           sum(ride_count) AS total_rides
+    FROM zone_demand
+    GROUP BY event_hour
+    UNION ALL
+    SELECT 'nyc_historical' AS source,
+           event_hour,
+           sum(ride_count) AS total_rides
+    FROM zone_demand_historical_nyc
+    GROUP BY event_hour
+    ORDER BY event_hour, source
+  notes: >
+    CRITICAL: event_hour is bigint in zone_demand but integer in
+    zone_demand_historical_nyc. Cast explicitly (event_hour::integer) whenever
+    unioning or joining across these two tables. The two tables also cover
+    different cities and date ranges - compare them as separate series, never
+    join on city_zone across them.
+
+- id: top-zones-on-date
+  question: Top 5 zones by completed rides on 15 June 2026?
+  sql: |
+    SELECT city_zone,
+           sum(completed_rides) AS completed
+    FROM zone_demand_historical_nyc
+    WHERE event_date = '2026-06-15'
+    GROUP BY city_zone
+    ORDER BY completed DESC
+    LIMIT 5
+  notes: Single-date filters compare event_date to a 'YYYY-MM-DD' string.
+
+- id: payment-method-share
+  question: What share of completed rides does each payment method have?
+  sql: |
+    SELECT payment_method,
+           count(*) AS rides,
+           round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS pct
+    FROM rides_historical_nyc
+    WHERE status = 'completed'
+    GROUP BY payment_method
+    ORDER BY rides DESC
+  notes: >
+    payment_method exists only on the row-level table; the aggregates don't
+    carry it. Window over the grouped counts yields the percentage share.
+
+- id: daily-revenue-trend
+  question: Show the daily revenue trend for the historical data.
+  sql: |
+    SELECT event_date,
+           round(sum(gross_revenue_inr)::numeric, 2) AS revenue_inr
+    FROM zone_demand_historical_nyc
+    GROUP BY event_date
+    ORDER BY event_date
+  notes: >
+    Ordering by event_date works because YYYY-MM-DD strings sort
+    chronologically.
+
+- id: fare-per-km
+  question: Which vehicle type earns the most per kilometre?
+  sql: |
+    SELECT vehicle_type,
+           round((sum(gross_fare_inr) / nullif(sum(distance_km), 0))::numeric, 2)
+               AS inr_per_km
+    FROM rides_historical_nyc
+    WHERE status = 'completed'
+    GROUP BY vehicle_type
+    ORDER BY inr_per_km DESC
+  notes: >
+    Ratio of sums, not average of ratios - short rides would otherwise
+    dominate. Distance and per-ride monetary detail live only on the
+    row-level table.

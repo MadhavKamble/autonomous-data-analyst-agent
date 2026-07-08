@@ -1,0 +1,45 @@
+# Standing guidance chunks, retrieved alongside schema docs and examples.
+# Each entry becomes one rag_chunk (kind = guidance). These encode the rules
+# a careful analyst would know about this database - the things most likely
+# to produce subtly-wrong SQL when missed.
+
+- id: sql-dialect-rules
+  title: SQL dialect and query rules
+  content: >
+    Target is PostgreSQL 16. Write exactly ONE SELECT statement (WITH/CTEs are
+    fine); no INSERT/UPDATE/DELETE/DDL - the executor role is read-only and
+    the database will reject writes. Only the three documented tables exist:
+    zone_demand, rides_historical_nyc, zone_demand_historical_nyc. Never
+    reference columns not listed in the schema docs. Add LIMIT (200 or less)
+    to any query returning individual rows; aggregates with small group counts
+    don't need one. Use round(x::numeric, 2) for monetary output. All money is
+    Indian Rupees (INR).
+
+- id: table-selection-guide
+  title: Which table answers which question
+  content: >
+    rides_historical_nyc is the row-level table (real NYC TLC data): use it
+    for anything involving per-ride attributes - vehicle_type, payment_method,
+    distance_km, individual fares, ride ids. zone_demand_historical_nyc is its
+    hourly per-zone aggregate: prefer it for zone/hour/date trends of counts,
+    revenue and surge - it is far smaller and already grouped.
+    zone_demand is a SEPARATE dataset from the platform's live simulator
+    (an Indian city; different zones, different and more recent date range).
+    Do not join or blend zone names across the simulator and NYC tables;
+    compare them only as separate labelled series.
+
+- id: data-semantics
+  title: Data semantics and pitfalls
+  content: >
+    event_date is TEXT in YYYY-MM-DD format everywhere - string comparison and
+    BETWEEN sort chronologically; cast ::date only if date arithmetic is
+    needed. event_hour is 0-23, but its type differs: bigint in zone_demand,
+    integer in zone_demand_historical_nyc and rides_historical_nyc - cast
+    explicitly when unioning/joining across tables. Ride status is one of
+    'requested', 'completed', 'cancelled'; is_completed is equivalent to
+    status = 'completed'. In the aggregate tables ride_count counts all three
+    statuses, so ride_count >= completed_rides + cancelled_rides; the
+    remainder is unfulfilled requests. gross_fare_inr and gross_revenue_inr
+    are 0.0 for non-completed rides - filter to completed before averaging
+    fares. avg_surge_multiplier and surge_multiplier are 1.0 when there is no
+    surge.
