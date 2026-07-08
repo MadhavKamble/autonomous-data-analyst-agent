@@ -13,6 +13,9 @@
   pool), not merely process liveness — UptimeRobot's ping must validate the
   stack the demo depends on, and its 5-minute cadence doubles as the
   keep-warm signal.
+- /ask is rate-limited per client IP (app/api/rate_limit.py) — there is no
+  user auth in this demo, so an IP-keyed budget is the only thing stopping
+  one visitor from spending the whole shared Groq daily quota.
 """
 
 from __future__ import annotations
@@ -20,9 +23,10 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.api.rate_limit import enforce_rate_limit
 from app.api.schemas import (
     AskRequest,
     AskResponse,
@@ -63,7 +67,7 @@ def health(request: Request) -> HealthResponse | JSONResponse:
 
 # -- ask ------------------------------------------------------------------------
 
-@router.post("/ask", response_model=AskResponse)
+@router.post("/ask", response_model=AskResponse, dependencies=[Depends(enforce_rate_limit)])
 def ask(request: Request, body: AskRequest) -> AskResponse:
     store = _store(request)
 

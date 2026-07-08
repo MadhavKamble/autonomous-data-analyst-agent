@@ -29,6 +29,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    app.state.settings = settings  # read by app/api/rate_limit.py
     pool = create_app_pool(settings)
     pool.open()
     app.state.pool = pool

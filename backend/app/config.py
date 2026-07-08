@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     # with no credentials, but explicit origins are the better default story.
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # Per-IP request budget on /ask (see app/api/rate_limit.py) — the only
+    # thing standing between a public demo with no auth and one visitor
+    # draining the shared Groq daily quota for everyone else.
+    rate_limit_per_minute: int = 10
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
