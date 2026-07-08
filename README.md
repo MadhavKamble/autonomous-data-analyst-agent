@@ -24,12 +24,16 @@ bridge is `scripts/export_from_delta.py`, a manually-run utility.
 # 1. Local Postgres 16 + pgvector (host port 5433, avoids clashing with other stacks)
 docker compose up -d
 
-# 2. Python env
+# 2. Python env (plain venv works too: python3 -m venv .venv && pip install -e '.[dev]')
 cd backend && uv sync --extra dev && cp .env.example .env && cd ..
 
 # 3. Apply migrations, then load realistic mock data (no Delta Lake needed)
 uv run --project backend python scripts/run_migrations.py
 uv run --project backend python db/seed/seed_mock_data.py
+
+# 4. Provision the read-only role's login (grants live in migration 002;
+#    the password deliberately does not)
+AGENT_RO_PASSWORD=agent_local_pw uv run --project backend python scripts/set_agent_password.py
 ```
 
 To load **real** data instead of mock data, run the export utility against the other
