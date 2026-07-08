@@ -57,6 +57,20 @@ uv run --project backend python scripts/export_from_delta.py \
   --zone-demand             /path/to/gold/zone_demand
 ```
 
+### Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env   # VITE_API_BASE_URL, defaults to http://localhost:8000
+npm run dev            # http://localhost:5173, expects the backend already running
+```
+
+`npm run build` runs a strict `tsc -b` before bundling — the reasoning-trace payload
+(`AskResult`, per-attempt SQL/execution/critic data, LLM budget counters) is typed
+end-to-end in `src/types/trace.ts`, mirrored field-for-field from the backend's pydantic
+models, with no `any` in the request path.
+
 ## Deployment
 
 *(TODO — Render + Vercel + Neon walkthrough)*
