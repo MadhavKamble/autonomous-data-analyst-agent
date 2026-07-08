@@ -35,7 +35,15 @@ class Settings(BaseSettings):
     rag_top_k: int = 4  # small on purpose: grounding context counts against Groq's ~12K TPM
     embedding_dimensions: int = 768  # must match vector(768) in migration 004
 
-    # -- Embeddings (vector retriever only) ----------------------------------
+    # -- LLM backend ----------------------------------------------------------
+    # groq: llama-3.3-70b-versatile (primary; client wrapper lands in step 8).
+    # ollama: llama3.2:3b locally — offline dev and the Groq-rate-limit fallback.
+    llm_backend: Literal["groq", "ollama"] = "groq"
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    ollama_llm_model: str = "llama3.2:3b"
+
+    # -- Ollama endpoint (shared by fallback LLM + dev embeddings) ------------
     ollama_base_url: str = "http://localhost:11434"
     ollama_embed_model: str = "nomic-embed-text"
 
