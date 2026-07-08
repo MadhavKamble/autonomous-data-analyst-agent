@@ -47,6 +47,15 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_embed_model: str = "nomic-embed-text"
 
+    # -- Orchestration bounds --------------------------------------------------
+    # Worst case per question: 1 planner + max_sql_attempts × (generator +
+    # critic) + 1 summarizer = 8 LLM calls. llm_call_budget hard-caps TOTAL
+    # calls (not attempts), so no failure mode can spend more.
+    max_sql_attempts: int = 3
+    llm_call_budget: int = 8
+    sql_row_cap: int = 200
+    sql_timeout_seconds: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:
