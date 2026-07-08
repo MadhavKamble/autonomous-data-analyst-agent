@@ -1,0 +1,30 @@
+# Local development database only. The deployed system uses Neon (managed
+# Postgres); this container exists so development and the test suite never
+# depend on a network service, and so the read-only-role tests have a database
+# they are allowed to create roles on.
+#
+# pgvector/pgvector:pg16 is the official Postgres 16 image with the pgvector
+# extension pre-installed (used by the RAG layer, migration 004).
+#
+# Host port 5433 (not 5432) so this stack can run alongside the Ride-Sharing
+# Analytics Platform's Docker stack without a port collision.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: adaa-postgres
+    environment:
+      POSTGRES_USER: adaa_admin
+      POSTGRES_PASSWORD: adaa_local_pw   # local-only credential, never used in cloud
+      POSTGRES_DB: adaa
+    ports:
+      - "5433:5432"
+    volumes:
+      - adaa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adaa_admin -d adaa"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  adaa_pgdata:

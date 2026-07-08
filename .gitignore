@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Environment / secrets — .env.example is committed instead
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+frontend/dist/
+
+# Local Postgres data volume (if bind-mounted)
+.pgdata/
+
+# Editor noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
