@@ -53,7 +53,11 @@ def create_llm_client(settings: Settings) -> LLMClient:
             base_url=settings.ollama_base_url,
             model=settings.ollama_llm_model,
         )
-    # Groq wrapper (backoff, 429 handling, token budget) is step 8.
-    raise NotImplementedError(
-        "LLM_BACKEND=groq is wired up in step 8; set LLM_BACKEND=ollama for local development."
-    )
+    if not settings.groq_api_key:
+        raise LLMBackendError(
+            "LLM_BACKEND=groq but GROQ_API_KEY is empty — set it in backend/.env, "
+            "or set LLM_BACKEND=ollama for offline development."
+        )
+    from app.llm.groq_client import GroqLLMClient
+
+    return GroqLLMClient(api_key=settings.groq_api_key, model=settings.groq_model)
