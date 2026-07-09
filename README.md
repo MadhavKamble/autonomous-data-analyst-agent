@@ -12,6 +12,17 @@ real constraints (free-tier hosting, rate limits, no background workers) — not
 [Deployment](#deployment) · [Design decisions & tradeoffs](#design-decisions--tradeoffs) ·
 [Testing](#testing) · [Known limitations](#known-limitations)
 
+
+## Live Demo
+
+- **App:** https://autonomous-data-analyst-agent-adaa.vercel.app
+- **API:** https://adaa-backend-6hsr.onrender.com (docs at `/docs`, health at `/health`)
+
+Note: the backend is on Render's free tier and kept warm via a 5-minute UptimeRobot
+health check, but if you're the very first visitor after a monitor gap, expect up to a
+60-second cold start — the frontend detects this and shows a "waking up" message rather
+than looking broken.
+
 ## Relationship to the Ride-Sharing Analytics Platform
 
 This project reasons over a **one-time Postgres snapshot** exported from the Gold layer of
@@ -140,7 +151,10 @@ The stack targets three free tiers: **Neon** (Postgres), **Render** (FastAPI bac
    Neon instead of `localhost:5433`). Build the RAG index once from a machine that can
    reach your local Ollama — the deployed backend itself won't be able to (see below).
 2. **Render** — new Web Service from this repo, root directory `backend/`. Build command
-   `pip install -e .`, start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+   `pip install -r requirements.txt` (a plain requirements.txt, generated via `pip freeze`
+   from the pyproject.toml dependencies, is committed for deployment — Render's build
+   didn't pick up the `uv`/pyproject workflow cleanly), start command `uvicorn app.main:app
+   --host 0.0.0.0 --port $PORT`.
    Environment variables: `ADMIN_DATABASE_URL` / `AGENT_DATABASE_URL` (Neon), `GROQ_API_KEY`,
    `LLM_BACKEND=groq`, **`RETRIEVER=lexical`** (Render can't reach a local Ollama instance,
    so the deployed backend ranks the same `rag_chunks` corpus with Postgres full-text
